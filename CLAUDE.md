@@ -86,9 +86,15 @@ builds a distributable installer from whatever was just built, into
 - **Windows** — builds a real installer `.exe` via NSIS's `makensis`
   (`cmake/installer.nsi`), which — like the mingw-w64 compiler — itself
   cross-builds from Linux/macOS; nothing runs on actual Windows until the
-  resulting installer is executed there. The installer installs per-user
-  into `%APPDATA%\obs-studio\plugins\<name>\` (no admin rights needed,
-  `RequestExecutionLevel user`) and registers an uninstaller under
+  resulting installer is executed there. The installer installs into
+  `C:\ProgramData\obs-studio\plugins\<name>\` — OBS's current documented
+  manual-install location (obsproject.com/kb/plugins-guide) as of OBS 32;
+  the older `%APPDATA%\obs-studio\plugins\<name>\` per-user convention
+  this project originally used is no longer scanned and silently produces
+  no log output at all, not even a load failure (confirmed against a real
+  OBS 32.2.2 install). `C:\ProgramData` doesn't require admin rights to
+  write to (unlike `C:\Program Files\...`), so `RequestExecutionLevel
+  user` still applies; the uninstaller registers under
   `HKCU\...\Uninstall\<name>` (there's no `install-windows` target since
   there's nowhere to install to from a non-Windows host).
 

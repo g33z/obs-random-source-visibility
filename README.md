@@ -155,10 +155,12 @@ against a DLL that doesn't ship its own import library.
 
 `make package-windows` feeds `cmake/installer.nsi` to `makensis`, which
 packages the staged `.dll` + `data/` tree into a self-contained installer
-that, when run on Windows, installs per-user into
-`%APPDATA%\obs-studio\plugins\<name>\` (no admin rights needed) and
-registers an uninstaller. There's no `install-windows` target — copy the
-`.exe` from `build/dist/` onto the actual Windows machine and run it.
+that, when run on Windows, installs into
+`C:\ProgramData\obs-studio\plugins\<name>\` — OBS's current recommended
+manual-install location — and registers an uninstaller. That path doesn't
+require admin rights to write to, unlike `C:\Program Files\...`. There's
+no `install-windows` target — copy the `.exe` from `build/dist/` onto the
+actual Windows machine and run it.
 
 ## Packaging
 
@@ -167,8 +169,8 @@ builds a distributable installer from whatever was just built: a `.dmg`
 on macOS, a `.deb` on Linux (installs system-wide, to
 `/usr/lib/x86_64-linux-gnu/obs-plugins/` + `/usr/share/obs/obs-plugins/`,
 requires `obs-studio` installed via apt/PPA rather than a portable OBS
-build), an NSIS-built `.exe` installer for Windows (installs per-user into
-`%APPDATA%\obs-studio\plugins\<name>\`). Output lands in `build/dist/`.
+build), an NSIS-built `.exe` installer for Windows (installs into
+`C:\ProgramData\obs-studio\plugins\<name>\`). Output lands in `build/dist/`.
 
 The `.deb` declares `Depends: obs-studio (>= 28.0.0)`. Install it with
 `sudo apt install ./build/dist/obs-random-source-visibility_*.deb` so apt

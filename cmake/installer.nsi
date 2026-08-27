@@ -31,11 +31,13 @@ Unicode true
 Name "${PLUGIN_NAME}"
 OutFile "${OUT_FILE}"
 
-; Per-user install into %APPDATA%\obs-studio\plugins\<name> - the same path
-; the old .zip's README instructions had users extract into - so no admin
-; elevation is needed, consistent with the per-user plugin dirs `make
-; install` uses on macOS/Linux.
-InstallDir "$APPDATA\obs-studio\plugins\${PLUGIN_NAME}"
+; C:\ProgramData\obs-studio\plugins\<name> is OBS's current recommended
+; manual-install location (obsproject.com/kb/plugins-guide) - it superseded
+; the old %APPDATA%\obs-studio\plugins\ per-user convention, and unlike
+; Program Files it doesn't require admin elevation to write to, so this
+; still installs as a normal user (RequestExecutionLevel user + HKCU
+; below - never mix that with $ProgramFiles/HKLM).
+InstallDir "$COMMONPROGRAMDATA\obs-studio\plugins\${PLUGIN_NAME}"
 RequestExecutionLevel user
 
 !define MUI_ABORTWARNING

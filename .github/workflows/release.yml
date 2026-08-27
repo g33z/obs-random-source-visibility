@@ -43,8 +43,28 @@ jobs:
           name: linux
           path: build/dist/*.deb
 
+  windows:
+    # Cross-compiled from Linux via mingw-w64 - see deps-windows.sh and
+    # cmake/mingw-w64-toolchain.cmake. Nothing is built on actual Windows.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc-mingw-w64-x86-64
+
+      - name: Build and package
+        run: make package-windows
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: build/dist/*.zip
+
   release:
-    needs: [macos, linux]
+    needs: [macos, linux, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

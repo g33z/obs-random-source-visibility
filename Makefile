@@ -7,6 +7,9 @@ STAGE_DIR := $(BUILD_DIR)/stage
 DIST_DIR := $(BUILD_DIR)/dist
 DEPS_DIR := .deps
 
+WIN_BUILD_DIR := $(BUILD_DIR)/windows
+WIN_STAGE_DIR := $(WIN_BUILD_DIR)/stage
+
 JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
 CMAKE_ARGS :=
@@ -28,7 +31,8 @@ OBS_PLUGIN_DIR := $(HOME)/.config/obs-studio/plugins
 SED_INPLACE := sed -i
 endif
 
-.PHONY: deps configure build stage install package clean rebuild version
+.PHONY: deps configure build stage install package clean rebuild version \
+	deps-windows configure-windows build-windows stage-windows package-windows clean-windows
 
 # Lets `make version x.y.z` pass "x.y.z" as an argument instead of a goal.
 # Chaining other goals (e.g. `make version x.y.z package`) isn't supported -
@@ -133,6 +137,37 @@ else ifeq ($(UNAME_S),Linux)
 else
 	@echo "no packaging support for $(UNAME_S)"
 endif
+
+# Cross-compiles for Windows from Linux/macOS via mingw-w64 - nothing is
+# built on actual Windows. See deps-windows.sh and
+# cmake/mingw-w64-toolchain.cmake.
+deps-windows:
+	./deps-windows.sh
+
+configure-windows: deps-windows
+	cmake -B $(WIN_BUILD_DIR) -S . -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-toolchain.cmake
+
+build-windows: configure-windows
+	cmake --build $(WIN_BUILD_DIR) -j $(JOBS)
+
+stage-windows: build-windows
+	cmake --install $(WIN_BUILD_DIR) --prefix $(WIN_STAGE_DIR)
+
+# Zips the staged bin/64bit/<name>.dll + data/ tree matching the layout
+# %APPDATA%\obs-studio\plugins\<name>\ expects on a real Windows machine -
+# there's nowhere to `install` to from a non-Windows host.
+package-windows: stage-windows
+	@mkdir -p $(DIST_DIR)
+	rm -rf "$(WIN_BUILD_DIR)/package-root"
+	mkdir -p "$(WIN_BUILD_DIR)/package-root/$(PLUGIN_NAME)/bin/64bit"
+	mkdir -p "$(WIN_BUILD_DIR)/package-root/$(PLUGIN_NAME)/data"
+	cp "$(WIN_STAGE_DIR)/obs-plugins/64bit/$(PLUGIN_NAME).dll" "$(WIN_BUILD_DIR)/package-root/$(PLUGIN_NAME)/bin/64bit/"
+	cp -R "$(WIN_STAGE_DIR)/data/obs-plugins/$(PLUGIN_NAME)/." "$(WIN_BUILD_DIR)/package-root/$(PLUGIN_NAME)/data/"
+	rm -f "$(DIST_DIR)/$(PLUGIN_NAME)-$(PLUGIN_VERSION)-windows.zip"
+	cd "$(WIN_BUILD_DIR)/package-root" && cmake -E tar cf "$(abspath $(DIST_DIR))/$(PLUGIN_NAME)-$(PLUGIN_VERSION)-windows.zip" --format=zip -- "$(PLUGIN_NAME)"
+
+clean-windows:
+	rm -rf $(WIN_BUILD_DIR)
 
 # Sets the project version in CMakeLists.txt (the single source of truth
 # PLUGIN_VERSION above is scraped from). Usage: make version x.y.z

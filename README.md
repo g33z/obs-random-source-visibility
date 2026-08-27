@@ -116,18 +116,59 @@ sudo apt update
 sudo apt install obs-studio
 ```
 
-### Windows
+### Windows (cross-compiled from Linux/macOS)
 
-Not currently supported. There's no libobs dev package for Windows and
-no local build path documented here.
+There's no local Windows build path — the Windows `.dll`, and the
+installer that ships it, are both built from a Linux or macOS machine,
+via the Makefile's `-windows` targets: the `.dll` is cross-compiled with
+[mingw-w64](https://www.mingw-w64.org/), and the installer `.exe` is
+built with NSIS's `makensis`, which itself cross-builds Windows
+installers from Linux/macOS — nothing runs on actual Windows until the
+resulting installer is executed there.
+
+Prerequisites:
+
+```bash
+# Linux
+sudo apt install cmake gcc-mingw-w64-x86-64 nsis
+
+# macOS
+brew install cmake mingw-w64 makensis
+```
+
+Then:
+
+```bash
+make deps-windows     # fetches libobs headers and synthesizes obs.lib into .deps/windows/
+make build-windows    # cross-compiles obs-random-source-visibility.dll
+make package-windows  # builds a Windows installer .exe into build/dist/
+```
+
+`make deps-windows` (`deps-windows.sh`) targets the latest OBS Studio
+release: it sparse-checks-out the matching `libobs/` headers from the
+obs-studio repo (same technique as macOS's `make deps`), downloads the
+official portable Windows `.zip` release and pulls `obs.dll` out of it,
+then synthesizes the `obs.lib` import library Windows OBS builds don't
+ship by dumping that DLL's export table (`objdump`) into a generated
+`.def` file and feeding it through `dlltool` — the standard way to link
+against a DLL that doesn't ship its own import library.
+
+`make package-windows` feeds `cmake/installer.nsi` to `makensis`, which
+packages the staged `.dll` + `data/` tree into a self-contained installer
+that, when run on Windows, installs per-user into
+`%APPDATA%\obs-studio\plugins\<name>\` (no admin rights needed) and
+registers an uninstaller. There's no `install-windows` target — copy the
+`.exe` from `build/dist/` onto the actual Windows machine and run it.
 
 ## Packaging
 
-`make package` builds a distributable installer from whatever you just
-built: a `.dmg` on macOS, a `.deb` on Linux (installs system-wide, to
+`make package` (macOS/Linux) or `make package-windows` (cross-built)
+builds a distributable installer from whatever was just built: a `.dmg`
+on macOS, a `.deb` on Linux (installs system-wide, to
 `/usr/lib/x86_64-linux-gnu/obs-plugins/` + `/usr/share/obs/obs-plugins/`,
 requires `obs-studio` installed via apt/PPA rather than a portable OBS
-build). Output lands in `build/dist/`.
+build), an NSIS-built `.exe` installer for Windows (installs per-user into
+`%APPDATA%\obs-studio\plugins\<name>\`). Output lands in `build/dist/`.
 
 The `.deb` declares `Depends: obs-studio (>= 28.0.0)`. Install it with
 `sudo apt install ./build/dist/obs-random-source-visibility_*.deb` so apt
@@ -140,17 +181,23 @@ as missing (and leave the package unconfigured) even though the
 
 Bump the version with `make version x.y.z` (rewrites
 `CMakeLists.txt`, the single source of truth that `PLUGIN_VERSION` and
-`.deb`/`.dmg` filenames are derived from) before tagging.
+`.deb`/`.dmg`/`.zip` filenames are derived from) before tagging.
 
 Pushing a tag matching `v*` (e.g. `v1.0.0`) triggers
-`.github/workflows/release.yml`, which builds macOS and Linux with
-`make package` and attaches the resulting `.dmg`/`.deb` to a new GitHub
-Release. It only runs on tag pushes — regular commits don't trigger it.
+`.github/workflows/release.yml`, which builds macOS and Linux natively
+and cross-builds Windows (both the `.dll` and its NSIS installer) on the
+same Linux runner (`make package` / `make package-windows`), attaching
+the resulting `.dmg`/`.deb`/`.exe` to a new GitHub Release. It only runs
+on tag pushes — regular commits don't trigger it.
 
 ## Project layout
 
 ```
 CMakeLists.txt
+Makefile                        build orchestration (native + Windows cross-compile)
+deps-windows.sh                 fetches libobs headers, synthesizes obs.lib
+cmake/mingw-w64-toolchain.cmake CMake toolchain file for the Windows cross-compile
+cmake/installer.nsi             NSIS script for the Windows installer .exe
 src/
   plugin-main.c                 module load/unload, source registration
   random-visibility-filter.c/h  the filter implementation

@@ -50,13 +50,30 @@ sudo apt install cmake libobs-dev
 ```
 
 `cmake` alone is not sufficient — without `libobs-dev`, `find_package(libobs)`
-in CMakeLists.txt fails at configure time. Windows is not supported: no
-local build path, and deliberately left out of CI too (see Releases below).
+in CMakeLists.txt fails at configure time.
+
+Windows is cross-compiled from Linux or macOS via mingw-w64 — nothing is
+built on actual Windows, and there's no local build path on Windows
+itself. Driven by the same Makefile, via `-windows`-suffixed targets:
+
+```bash
+sudo apt install cmake gcc-mingw-w64-x86-64 nsis   # Linux; macOS: brew install mingw-w64 makensis
+
+make deps-windows      # fetch libobs headers + synthesize obs.lib into .deps/windows/
+make build-windows     # cross-compile obs-random-source-visibility.dll
+make package-windows   # build a Windows installer .exe into build/dist/ via makensis
+```
+
+There's no `install-windows` — copy the installer `.exe` onto an actual
+Windows machine and run it. See Packaging and releases below for how
+`deps-windows.sh` synthesizes `obs.lib`, how `cmake/installer.nsi` builds
+the installer, and why a native Windows build was ruled out for both.
 
 ## Packaging and releases
 
-`make package` (macOS/Linux only) builds a distributable installer from
-whatever `make build` just produced, into `build/dist/`:
+`make package` (macOS/Linux) or `make package-windows` (cross-compiled)
+builds a distributable installer from whatever was just built, into
+`build/dist/`:
 
 - **macOS** — wraps the staged `.plugin` bundle in a `.dmg` via `hdiutil`.
 - **Linux** — builds a `.deb` targeting the same system paths OBS's own
@@ -66,6 +83,14 @@ whatever `make build` just produced, into `build/dist/`:
   location than `make install`'s per-user
   `~/.config/obs-studio/plugins/<name>/` tree — the `.deb` is meant for
   a system-wide `obs-studio` install (apt/PPA), not a portable OBS build.
+- **Windows** — builds a real installer `.exe` via NSIS's `makensis`
+  (`cmake/installer.nsi`), which — like the mingw-w64 compiler — itself
+  cross-builds from Linux/macOS; nothing runs on actual Windows until the
+  resulting installer is executed there. The installer installs per-user
+  into `%APPDATA%\obs-studio\plugins\<name>\` (no admin rights needed,
+  `RequestExecutionLevel user`) and registers an uninstaller under
+  `HKCU\...\Uninstall\<name>` (there's no `install-windows` target since
+  there's nowhere to install to from a non-Windows host).
 
 `PLUGIN_VERSION` (used in artifact filenames and the `.deb` control
 file) is scraped from `CMakeLists.txt`'s `project(... VERSION x.y.z)`
@@ -75,18 +100,35 @@ parens naively to find the end of the call, so a literal `\(` from a
 sed pattern trips it up even though it's escaped for sed's benefit, not
 Make's.
 
-`.github/workflows/release.yml` runs both platforms' `make package` and
-publishes the `.dmg`/`.deb` to a GitHub Release whenever a tag matching
-`v*` is pushed — it does nothing on regular commits/pushes, so it costs
-nothing just by existing. Windows was deliberately dropped from both
-local dev and CI: there's no libobs dev package for Windows anywhere,
-and getting one requires either building obs-studio's `libobs` from
-source (slow, fragile, needs prebuilt Qt/obs-deps and hits an unrelated
-mandatory 32-bit sub-build in obs-studio's root `CMakeLists.txt` on
-`x64`) or synthesizing an import lib from the official `obs.dll`'s
-export table via `dumpbin`/`lib.exe` (works, but untestable outside an
-actual Windows CI run and adds real fragility for a plugin this small).
-Revisit if Windows support becomes a real requirement.
+`.github/workflows/release.yml` runs all three platforms' package step
+and publishes the `.dmg`/`.deb`/`.exe` to a GitHub Release whenever a tag
+matching `v*` is pushed (the `windows` job runs on the same
+`ubuntu-24.04` runner as `linux`, just with `gcc-mingw-w64-x86-64` and
+`nsis` installed too) — it does nothing on regular commits/pushes, so it
+costs nothing just by existing.
+
+Windows was previously left out entirely (no local build path, dropped
+from CI) on the assumption that linking against libobs on Windows would
+need either building obs-studio's `libobs` from source (slow, fragile,
+needs prebuilt Qt/obs-deps and an unrelated mandatory 32-bit sub-build in
+obs-studio's root `CMakeLists.txt` on `x64`) or a native Windows build to
+synthesize an import lib via MSVC's `dumpbin`/`lib.exe` — the latter
+noted at the time as "works, but untestable outside an actual Windows CI
+run." Both assumptions turned out to be avoidable: `deps-windows.sh`
+downloads OBS's official portable Windows `.zip` release (no installer,
+no Windows machine needed to obtain `obs.dll`), dumps its export table
+via `x86_64-w64-mingw32-objdump` into a generated `.def`, and feeds that
+to `x86_64-w64-mingw32-dlltool` to produce `obs.lib` — the same
+dumpbin/lib.exe technique, just with mingw-w64's cross binutils instead
+of MSVC, so it runs on Linux/macOS. libobs headers are sparse-checked-out
+from the obs-studio repo the same way macOS's `deps` does. This
+deliberately avoids obs-studio's root `CMakeLists.txt` (and its 32-bit
+sub-build) entirely by never building libobs from source, only linking
+against the already-built `obs.dll` OBS's own release ships. Verified for
+real in this repo's history: a full cross-compile (`x86_64-w64-mingw32-gcc`)
+producing a valid PE32+ DLL whose imports (`objdump -p`) correctly
+resolve to `obs.dll`'s exported functions, before any of this was wired
+into the Makefile/CI.
 
 ## Architecture
 
@@ -113,16 +155,56 @@ Revisit if Windows support becomes a real requirement.
     — this filter never touches pixels, it only flips sibling
     sceneitem visibility.
 - `data/locale/en-US.ini` — all `obs_module_text()` UI strings.
-- `CMakeLists.txt` — on macOS, builds a `.plugin` bundle and links
+- `CMakeLists.txt` — `project(... LANGUAGES C)` deliberately excludes
+  CXX: the plugin is pure C, and requesting C++ made CMake probe for a
+  host C++ compiler even though nothing used it, which broke the mingw-w64
+  cross-compile (CMake picked the *host's* `c++`, not
+  `x86_64-w64-mingw32-g++`, and the resulting object/link mismatch failed
+  the compiler-works check). On macOS, builds a `.plugin` bundle and links
   against `OBS_APP_BUNDLE`'s `libobs.framework` directly (an `IMPORTED`
   target `OBS::libobs`, not `find_package`), then a `POST_BUILD` step
   runs `install_name_tool -change` to rewrite the libobs dependency to
   `@executable_path/../Frameworks/libobs.framework/Versions/A/libobs`
   so the plugin resolves it correctly when loaded inside the real OBS
-  process. Non-Apple platforms fall back to `find_package(libobs REQUIRED)`.
+  process. Linux falls back to `find_package(libobs REQUIRED)`. Windows
+  links an `IMPORTED` `OBS::libobs` target against `OBS_STUDIO_DIR`'s
+  `obs.dll` via the `obs.lib` import lib `deps-windows.sh` synthesizes
+  (`.deps/windows/generated/obs.lib`) — same shape as the macOS branch,
+  just without the `install_name_tool` step (Windows resolves the DLL
+  dependency by name, no path rewrite needed since it's on OBS's own
+  plugin search path). `install(TARGETS ...)` sets both `LIBRARY` and
+  `RUNTIME` `DESTINATION` to the same computed path (`obs-plugins/64bit`
+  on Windows, `obs-plugins` elsewhere) because a `MODULE` library's
+  install artifact type on a mingw-w64 cross-compiled Windows target
+  turned out to be `LIBRARY`, not `RUNTIME` as CMake's docs would suggest
+  — confirmed empirically, not assumed, after a first attempt (setting
+  only `RUNTIME DESTINATION`) silently installed the `.dll` to the wrong
+  path.
 - `Makefile` — wraps the CMake configure/build/install/clean cycle and
   (on macOS/Linux) copies the installed plugin into the actual
   per-user OBS plugin directory, which differs by OS: a `.plugin`
   bundle under `~/Library/Application Support/obs-studio/plugins/` on
   macOS vs. a `bin/64bit/` + `data/` tree under
-  `~/.config/obs-studio/plugins/<name>/` on Linux.
+  `~/.config/obs-studio/plugins/<name>/` on Linux. The `-windows`-suffixed
+  targets (`deps-windows`/`configure-windows`/`build-windows`/
+  `stage-windows`/`package-windows`/`clean-windows`) cross-compile instead,
+  driven by `cmake/mingw-w64-toolchain.cmake`; there's no `install-windows`
+  since there's nowhere on a Linux/macOS host to install a Windows plugin
+  to.
+- `deps-windows.sh` — fetches libobs headers and synthesizes `obs.lib` for
+  the Windows cross-compile (see Packaging and releases above). Uses
+  `set -euo pipefail`; the `objdump -p obs.dll | awk ...` pipeline
+  deliberately avoids an early `exit` in the `awk` script once it's past
+  the export-name table — exiting early would close the pipe while
+  `objdump` is still writing the rest of its dump, killing it with
+  `SIGPIPE` and failing the whole script under `pipefail`. Drains to EOF
+  instead.
+- `cmake/installer.nsi` — NSIS script `make package-windows` feeds to
+  `makensis` to build the Windows installer `.exe`. Reads directly from
+  `stage-windows`'s output (`obs-plugins/64bit/<name>.dll` and
+  `data/obs-plugins/<name>/`) via `-D` command-line defines
+  (`PLUGIN_NAME`/`PLUGIN_VERSION`/`STAGE_DIR`/`OUT_FILE`) passed in by
+  the Makefile, so the script has no version string or path of its own
+  to keep in sync. `RequestExecutionLevel user` + an `InstallDir` under
+  `$APPDATA` keeps the install per-user (no UAC prompt), matching the
+  per-user plugin dirs `make install` uses on macOS/Linux.

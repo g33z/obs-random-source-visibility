@@ -7,6 +7,9 @@ STAGE_DIR := $(BUILD_DIR)/stage
 DIST_DIR := $(BUILD_DIR)/dist
 DEPS_DIR := .deps
 
+WIN_BUILD_DIR := $(BUILD_DIR)/windows
+WIN_STAGE_DIR := $(WIN_BUILD_DIR)/stage
+
 JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
 CMAKE_ARGS :=
@@ -28,7 +31,8 @@ OBS_PLUGIN_DIR := $(HOME)/.config/obs-studio/plugins
 SED_INPLACE := sed -i
 endif
 
-.PHONY: deps configure build stage install package clean rebuild version
+.PHONY: deps configure build stage install package clean rebuild version \
+	deps-windows configure-windows build-windows stage-windows package-windows clean-windows
 
 # Lets `make version x.y.z` pass "x.y.z" as an argument instead of a goal.
 # Chaining other goals (e.g. `make version x.y.z package`) isn't supported -
@@ -133,6 +137,42 @@ else ifeq ($(UNAME_S),Linux)
 else
 	@echo "no packaging support for $(UNAME_S)"
 endif
+
+# Cross-compiles for Windows from Linux/macOS via mingw-w64 - nothing is
+# built on actual Windows. See deps-windows.sh and
+# cmake/mingw-w64-toolchain.cmake.
+deps-windows:
+	./deps-windows.sh
+
+configure-windows: deps-windows
+	cmake -B $(WIN_BUILD_DIR) -S . -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-toolchain.cmake
+
+build-windows: configure-windows
+	cmake --build $(WIN_BUILD_DIR) -j $(JOBS)
+
+stage-windows: build-windows
+	cmake --install $(WIN_BUILD_DIR) --prefix $(WIN_STAGE_DIR)
+
+# Builds a real Windows installer (.exe) via makensis - which, like the
+# mingw-w64 compiler, cross-builds from Linux/macOS: nothing runs on actual
+# Windows until the installer itself is executed there. See
+# cmake/installer.nsi for what it installs and where.
+package-windows: stage-windows
+	@mkdir -p $(DIST_DIR)
+	@command -v makensis >/dev/null || { \
+		echo "makensis not found - install it with: sudo apt install nsis (Linux) or brew install makensis (macOS)"; \
+		exit 1; \
+	}
+	rm -f "$(DIST_DIR)/$(PLUGIN_NAME)-$(PLUGIN_VERSION)-windows-installer.exe"
+	makensis \
+		-DPLUGIN_NAME=$(PLUGIN_NAME) \
+		-DPLUGIN_VERSION=$(PLUGIN_VERSION) \
+		-DSTAGE_DIR=$(abspath $(WIN_STAGE_DIR)) \
+		-DOUT_FILE=$(abspath $(DIST_DIR))/$(PLUGIN_NAME)-$(PLUGIN_VERSION)-windows-installer.exe \
+		cmake/installer.nsi
+
+clean-windows:
+	rm -rf $(WIN_BUILD_DIR)
 
 # Sets the project version in CMakeLists.txt (the single source of truth
 # PLUGIN_VERSION above is scraped from). Usage: make version x.y.z

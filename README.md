@@ -106,10 +106,12 @@ apt resolves the `obs-studio` dependency automatically; `dpkg -i` doesn't.
 
 ## Releases
 
-Bump the version first: `make version x.y.z`. Then push a tag matching
-`vX.Y.Z` (the `v` prefix is required) to trigger
-`.github/workflows/release.yml`, which builds all three platforms and
-attaches the installers to a new GitHub Release.
+Run `make version x.y.z` - it bumps `CMakeLists.txt`, commits that one
+file, and tags the commit `vx.y.z` (refusing a dirty tree or an
+already-existing tag, so the tag and version can't drift). It doesn't
+push; review with `git show`, then `git push && git push --tags`. The
+`v`-prefixed tag triggers `.github/workflows/release.yml`, which builds
+all three platforms and attaches the installers to a new GitHub Release.
 
 Run `make hooks` once per clone to install a pre-push hook that rejects
 un-prefixed tags.

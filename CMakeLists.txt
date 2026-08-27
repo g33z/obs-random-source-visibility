@@ -97,8 +97,9 @@ if(APPLE)
 endif()
 
 if(WIN32)
-	# Real OBS Windows installs (and %APPDATA%\obs-studio\plugins\<name>\)
-	# expect the .dll one level deeper than mac/Linux's flat obs-plugins/.
+	# Real OBS Windows installs (and C:\ProgramData\obs-studio\plugins\<name>\,
+	# see cmake/installer.nsi) expect the .dll one level deeper than
+	# mac/Linux's flat obs-plugins/.
 	set(OBS_PLUGIN_RUNTIME_DESTINATION "obs-plugins/64bit")
 else()
 	set(OBS_PLUGIN_RUNTIME_DESTINATION "obs-plugins")

@@ -88,13 +88,13 @@ builds a distributable installer from whatever was just built, into
   cross-builds from Linux/macOS; nothing runs on actual Windows until the
   resulting installer is executed there. The installer installs into
   `C:\ProgramData\obs-studio\plugins\<name>\` — OBS's current documented
-  manual-install location (obsproject.com/kb/plugins-guide) as of OBS 32;
-  the older `%APPDATA%\obs-studio\plugins\<name>\` per-user convention
-  this project originally used is no longer scanned and silently produces
+  manual-install location (obsproject.com/kb/plugins-guide) as of OBS 32.
+  The older `%APPDATA%\obs-studio\plugins\<name>\` per-user convention
+  this project originally used is no longer scanned, and fails silently:
   no log output at all, not even a load failure (confirmed against a real
-  OBS 32.2.2 install). `C:\ProgramData` doesn't require admin rights to
-  write to (unlike `C:\Program Files\...`), so `RequestExecutionLevel
-  user` still applies; the uninstaller registers under
+  OBS 32.2.2 install). `C:\ProgramData` still doesn't require admin
+  rights to write to (unlike `C:\Program Files\...`), so
+  `RequestExecutionLevel user` still applies; the uninstaller registers under
   `HKCU\...\Uninstall\<name>` (there's no `install-windows` target since
   there's nowhere to install to from a non-Windows host).
 
@@ -211,6 +211,7 @@ into the Makefile/CI.
   `data/obs-plugins/<name>/`) via `-D` command-line defines
   (`PLUGIN_NAME`/`PLUGIN_VERSION`/`STAGE_DIR`/`OUT_FILE`) passed in by
   the Makefile, so the script has no version string or path of its own
-  to keep in sync. `RequestExecutionLevel user` + an `InstallDir` under
-  `$APPDATA` keeps the install per-user (no UAC prompt), matching the
-  per-user plugin dirs `make install` uses on macOS/Linux.
+  to keep in sync. `InstallDir` points at `$COMMONPROGRAMDATA` (see
+  Packaging and releases above for why); `RequestExecutionLevel user`
+  still applies since that path, unlike `$ProgramFiles`, doesn't need a
+  UAC prompt to write to.

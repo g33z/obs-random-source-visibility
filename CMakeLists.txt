@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16...3.29)
 
-project(obs-random-source-visibility VERSION 1.1.0 LANGUAGES C)
+project(obs-random-source-visibility VERSION 1.3.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)

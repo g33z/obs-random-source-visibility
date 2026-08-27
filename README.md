@@ -8,8 +8,7 @@
 A native OBS Studio filter plugin. Attach it to a **scene** or a **group**
 ("folder") and it randomly shows exactly one of that container's direct
 child sources at a time — hiding whichever one it last showed before
-picking the next one. Think of it as a slideshow with a dice roll instead
-of a fixed order.
+picking the next one.
 
 ## ✨ What it does
 
@@ -24,11 +23,14 @@ of a fixed order.
 
 Combine any or all of these:
 
-| Trigger | How |
-|---|---|
-| **Hotkey** | Each filter instance registers its own hotkey under Settings → Hotkeys ("Random Source Visibility: Trigger"), so different scenes/groups can have independent shortcuts. |
-| **Timer** | Enable "Automatically re-roll on a timer" in the filter's properties and set an interval. |
-| **Scene/group activation** | Enable "Re-roll when this scene/group becomes active" to re-roll whenever OBS switches to the scene (or the group becomes visible). |
+- **Hotkey** — each filter instance registers its own hotkey under
+  Settings → Hotkeys ("Random Source Visibility: Trigger"), so different
+  scenes/groups can have independent shortcuts.
+- **Timer** — enable "Automatically re-roll on a timer" in the filter's
+  properties and set an interval.
+- **Scene/group activation** — enable "Re-roll when this scene/group
+  becomes active" to re-roll whenever OBS switches to the scene (or the
+  group becomes visible).
 
 There's also a "Trigger Now" button in the filter properties for manual testing.
 
@@ -49,8 +51,8 @@ Grab the latest build for your OS from
 - **Linux** — `sudo apt install ./obs-random-source-visibility_*.deb`
   (requires `obs-studio` installed via apt/PPA — see
   [Linux prerequisites](#linux)).
-- **Windows** — run the `.exe` installer. It installs into
-  `C:\ProgramData\obs-studio\plugins\` and needs no admin rights.
+- **Windows** — run the `.exe` installer (see [Building from
+  source](#windows-cross-compiled-from-linuxmacos) for where it installs to and why).
 
 Restart OBS afterward and check **Help → Log Files → View Current Log**
 for `[obs-random-source-visibility] plugin loaded` to confirm it was
@@ -139,9 +141,7 @@ sudo apt install cmake gcc-mingw-w64-x86-64 nsis
 
 # macOS
 brew install cmake mingw-w64 makensis
-```
 
-```bash
 make deps-windows              # fetch libobs headers, synthesize obs.lib into .deps/windows/
 make build-windows             # cross-compile obs-random-source-visibility.dll
 make package-windows           # build the Windows installer .exe into build/dist/
@@ -185,10 +185,17 @@ though the `Depends` line is correct.
 
 ## 🚀 Releasing
 
-1. Bump the version: `make version x.y.z`. This rewrites
-   `CMakeLists.txt`, the single source of truth `PLUGIN_VERSION` and
-   every artifact filename (`.deb`/`.dmg`/`.exe`) are derived from.
-2. Tag and push: `git tag vx.y.z && git push --tags`.
+```bash
+make version x.y.z   # bump, commit, and tag in one step
+git push && git push --tags
+```
+
+`make version` rewrites `CMakeLists.txt` — the single source of truth
+that `PLUGIN_VERSION` and every artifact filename (`.deb`/`.dmg`/`.exe`)
+are derived from — commits that one file, and tags the commit `vx.y.z`.
+It refuses to run with a dirty working tree or a version that's already
+tagged, so the tag and the version baked into `CMakeLists.txt` can't
+drift apart. It doesn't push; review with `git show` first.
 
 Pushing a tag matching `v*` triggers
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which

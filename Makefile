@@ -175,7 +175,11 @@ clean-windows:
 	rm -rf $(WIN_BUILD_DIR)
 
 # Sets the project version in CMakeLists.txt (the single source of truth
-# PLUGIN_VERSION above is scraped from). Usage: make version x.y.z
+# PLUGIN_VERSION above is scraped from), then commits that one file and
+# tags the commit - bump and tag used to be two manual, unenforced steps,
+# which let them drift (CMakeLists.txt reading an old version at an
+# already-pushed vX.Y.Z tag). Usage: make version x.y.z. Doesn't push -
+# review with `git show` and run `git push && git push --tags` yourself.
 version:
 ifndef VERSION_ARG
 	$(error Usage: make version x.y.z)
@@ -184,8 +188,15 @@ endif
 		{ echo "make version is only supported on macOS/Linux (unsupported platform: $(UNAME_S))"; exit 1; }
 	@echo '$(VERSION_ARG)' | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
 		{ echo "version must be x.y.z (got '$(VERSION_ARG)')"; exit 1; }
+	@git rev-parse -q --verify "refs/tags/v$(VERSION_ARG)" >/dev/null && \
+		{ echo "tag v$(VERSION_ARG) already exists - pick a version that hasn't been tagged yet"; exit 1; } || true
+	@git diff --quiet && git diff --cached --quiet || \
+		{ echo "working tree has uncommitted changes - commit or stash them first so the version bump is its own commit"; exit 1; }
 	$(SED_INPLACE) -E 's/^(project[^V]*VERSION )[0-9.]+(.*)/\1$(VERSION_ARG)\2/' CMakeLists.txt
-	@echo "Set version to $(VERSION_ARG) in CMakeLists.txt"
+	git commit -m "Bump version to $(VERSION_ARG)" -- CMakeLists.txt
+	git tag "v$(VERSION_ARG)"
+	@echo "Bumped to $(VERSION_ARG), committed, and tagged v$(VERSION_ARG)."
+	@echo "Push when ready: git push && git push --tags"
 
 clean:
 	rm -rf $(BUILD_DIR)

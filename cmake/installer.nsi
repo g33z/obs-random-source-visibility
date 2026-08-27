@@ -34,9 +34,7 @@ OutFile "${OUT_FILE}"
 ; C:\ProgramData\obs-studio\plugins\<name> is OBS's current recommended
 ; manual-install location (obsproject.com/kb/plugins-guide) - it superseded
 ; the old %APPDATA%\obs-studio\plugins\ per-user convention, and unlike
-; Program Files it doesn't require admin elevation to write to, so this
-; still installs as a normal user (RequestExecutionLevel user + HKCU
-; below - never mix that with $ProgramFiles/HKLM).
+; Program Files it doesn't require admin elevation to write to.
 InstallDir "$COMMONPROGRAMDATA\obs-studio\plugins\${PLUGIN_NAME}"
 RequestExecutionLevel user
 
@@ -51,6 +49,14 @@ RequestExecutionLevel user
 
 !insertmacro MUI_LANGUAGE "English"
 
+; HKCU (not HKLM) to match RequestExecutionLevel user above - never mix
+; HKLM/$ProgramFiles-style all-machine registration with a
+; RequestExecutionLevel that isn't admin. Known tradeoff: since $INSTDIR
+; is shared (all users on the machine), a second Windows user who runs
+; this installer gets their own HKCU uninstall entry pointing at those
+; same shared files; whichever user uninstalls first removes the files
+; out from under the other user's now-stale entry. Not handled - out of
+; scope for a single-user-machine hobby plugin.
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PLUGIN_NAME}"
 
 Section "Install"

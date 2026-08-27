@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install cmake simde
+
+      - name: Install OBS
+        run: brew install --cask obs
+
+      - name: Build and package
+        run: make package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: build/dist/*.dmg
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libobs-dev
+
+      - name: Build and package
+        run: make package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: build/dist/*.deb
+
+  release:
+    needs: [macos, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*/*
+          generate_release_notes: true

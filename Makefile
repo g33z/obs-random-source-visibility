@@ -31,7 +31,7 @@ OBS_PLUGIN_DIR := $(HOME)/.config/obs-studio/plugins
 SED_INPLACE := sed -i
 endif
 
-.PHONY: deps configure build stage install package clean rebuild version hooks \
+.PHONY: deps configure build stage install package clean rebuild version bump-version hooks \
 	deps-windows configure-windows build-windows stage-windows package-windows clean-windows
 
 # Lets `make version x.y.z` pass "x.y.z" as an argument instead of a goal.
@@ -186,6 +186,25 @@ endif
 		{ echo "version must be x.y.z (got '$(VERSION_ARG)')"; exit 1; }
 	$(SED_INPLACE) -E 's/^(project[^V]*VERSION )[0-9.]+(.*)/\1$(VERSION_ARG)\2/' CMakeLists.txt
 	@echo "Set version to $(VERSION_ARG) in CMakeLists.txt"
+
+# Interactively bumps the current x.y.z (PLUGIN_VERSION, read from
+# CMakeLists.txt) by one patch/minor/major level, then hands off to the
+# `version` target above to do the actual write + validation.
+bump-version:
+	@current="$(PLUGIN_VERSION)"; \
+	major=$$(echo "$$current" | cut -d. -f1); \
+	minor=$$(echo "$$current" | cut -d. -f2); \
+	patch=$$(echo "$$current" | cut -d. -f3); \
+	echo "Current version: $$current"; \
+	printf "Bump [patch/minor/major]: "; \
+	read level; \
+	case "$$level" in \
+		patch) patch=$$((patch + 1));; \
+		minor) minor=$$((minor + 1)); patch=0;; \
+		major) major=$$((major + 1)); minor=0; patch=0;; \
+		*) echo "invalid choice '$$level' - expected patch, minor, or major"; exit 1;; \
+	esac; \
+	$(MAKE) version "$$major.$$minor.$$patch"
 
 # Points git at the repo's versioned hooks (.githooks/) instead of the
 # untracked, unshared .git/hooks/ - run once per clone.

@@ -6,7 +6,27 @@ on:
       - "v*"
 
 jobs:
+  # Fails fast, before any platform build, if the pushed tag doesn't match
+  # CMakeLists.txt's VERSION (the field `make version x.y.z` rewrites and
+  # PLUGIN_VERSION is scraped from for artifact filenames). The pre-push
+  # hook in .githooks/ catches this locally, but it's opt-in
+  # (`make hooks`) - this is the non-optional backstop.
+  check-version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches CMakeLists.txt VERSION
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          cmake_version=$(sed -n -E 's/^project[^V]*VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
+          if [ "$tag" != "$cmake_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match CMakeLists.txt's VERSION $cmake_version"
+            exit 1
+          fi
+
   macos:
+    needs: check-version
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +46,7 @@ jobs:
           path: build/dist/*.dmg
 
   linux:
+    needs: check-version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +69,7 @@ jobs:
     # built from Linux via makensis - see deps-windows.sh,
     # cmake/mingw-w64-toolchain.cmake and cmake/installer.nsi. Nothing is
     # built on actual Windows.
+    needs: check-version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

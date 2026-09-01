@@ -1,20 +1,43 @@
 #!/usr/bin/env bash
-# Rejects pushing any tag that doesn't look like vX.Y.Z (e.g. v1.3.1).
+# Rejects pushing any tag that doesn't look like vX.Y.Z (e.g. v1.3.1), or
+# whose version doesn't match CMakeLists.txt's VERSION at the tagged
+# commit (the same field `make version x.y.z` rewrites).
 #
 # .github/workflows/release.yml only triggers on tags matching v* - an
 # un-prefixed tag (e.g. 1.3.1) would push successfully but silently do
-# nothing, instead of failing loudly. This hook is installed via
-# `make hooks` (see README.md's Releases section).
+# nothing, instead of failing loudly. And PLUGIN_VERSION (used in
+# .dmg/.deb/.exe filenames and the .deb control file) is scraped from
+# CMakeLists.txt, not from the git tag - a tag/CMakeLists.txt mismatch
+# would silently mislabel release artifacts. This hook is installed via
+# `make hooks` (see README.md's Releases section); release.yml carries
+# the same check as a non-optional backstop.
 set -euo pipefail
 
 tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
+zero_sha='0000000000000000000000000000000000000000'
 
-while read -r local_ref _local_sha remote_ref _remote_sha; do
+while read -r local_ref local_sha remote_ref _remote_sha; do
 	case "$local_ref" in
 	refs/tags/*)
 		tag="${local_ref#refs/tags/}"
+
+		# A deleted tag push has local_sha all-zero - nothing to check.
+		[ "$local_sha" = "$zero_sha" ] && continue
+
 		if ! [[ "$tag" =~ $tag_pattern ]]; then
 			echo "error: refusing to push tag '$tag' - release tags must match 'vX.Y.Z' (e.g. v1.3.1)" >&2
+			exit 1
+		fi
+
+		cmake_version=$(git show "$local_sha:CMakeLists.txt" | sed -n -E 's/^project[^V]*VERSION ([0-9.]+).*/\1/p')
+		tag_version="${tag#v}"
+		if [ -z "$cmake_version" ]; then
+			echo "error: could not read a VERSION from CMakeLists.txt at $local_sha" >&2
+			exit 1
+		fi
+		if [ "$cmake_version" != "$tag_version" ]; then
+			echo "error: tag '$tag' doesn't match CMakeLists.txt's VERSION $cmake_version at the tagged commit" >&2
+			echo "       run 'make version $tag_version', commit, then re-tag" >&2
 			exit 1
 		fi
 		;;

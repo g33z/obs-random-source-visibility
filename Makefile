@@ -31,7 +31,7 @@ OBS_PLUGIN_DIR := $(HOME)/.config/obs-studio/plugins
 SED_INPLACE := sed -i
 endif
 
-.PHONY: deps configure build stage install package clean rebuild version \
+.PHONY: deps configure build stage install package clean rebuild version hooks \
 	deps-windows configure-windows build-windows stage-windows package-windows clean-windows
 
 # Lets `make version x.y.z` pass "x.y.z" as an argument instead of a goal.
@@ -186,6 +186,13 @@ endif
 		{ echo "version must be x.y.z (got '$(VERSION_ARG)')"; exit 1; }
 	$(SED_INPLACE) -E 's/^(project[^V]*VERSION )[0-9.]+(.*)/\1$(VERSION_ARG)\2/' CMakeLists.txt
 	@echo "Set version to $(VERSION_ARG) in CMakeLists.txt"
+
+# Points git at the repo's versioned hooks (.githooks/) instead of the
+# untracked, unshared .git/hooks/ - run once per clone.
+hooks:
+	git config core.hooksPath .githooks
+	chmod +x .githooks/*
+	@echo "git hooks enabled (core.hooksPath -> .githooks)"
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Rejects pushing any tag that doesn't look like vX.Y.Z (e.g. v1.3.1).
+#
+# .github/workflows/release.yml only triggers on tags matching v* - an
+# un-prefixed tag (e.g. 1.3.1) would push successfully but silently do
+# nothing, instead of failing loudly. This hook is installed via
+# `make hooks` (see README.md's Releases section).
+set -euo pipefail
+
+tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
+
+while read -r local_ref _local_sha remote_ref _remote_sha; do
+	case "$local_ref" in
+	refs/tags/*)
+		tag="${local_ref#refs/tags/}"
+		if ! [[ "$tag" =~ $tag_pattern ]]; then
+			echo "error: refusing to push tag '$tag' - release tags must match 'vX.Y.Z' (e.g. v1.3.1)" >&2
+			exit 1
+		fi
+		;;
+	esac
+done
+
+exit 0

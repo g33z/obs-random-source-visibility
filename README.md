@@ -192,6 +192,12 @@ same Linux runner (`make package` / `make package-windows`), attaching
 the resulting `.dmg`/`.deb`/`.exe` to a new GitHub Release. It only runs
 on tag pushes — regular commits don't trigger it.
 
+Tags **must** be `vX.Y.Z` (e.g. `v1.3.1`), not `X.Y.Z` — the release
+workflow's `v*` trigger silently does nothing for an un-prefixed tag,
+which just looks like a hung release. Run `make hooks` once per clone
+to install a `pre-push` hook (versioned in `.githooks/`, wired up via
+`core.hooksPath`) that rejects pushing a tag without the `v` prefix.
+
 ## Project layout
 
 ```

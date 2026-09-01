@@ -87,12 +87,13 @@ static void rsv_trigger(struct rsv_filter *f)
 	}
 
 	obs_source_t *previous = NULL;
+	obs_sceneitem_t *previous_item = NULL;
 	if (f->current_source) {
 		obs_source_t *cur = obs_weak_source_get_source(f->current_source);
 		if (cur) {
 			for (size_t i = 0; i < list.count; i++) {
 				if (obs_sceneitem_get_source(list.items[i]) == cur) {
-					obs_sceneitem_set_visible(list.items[i], false);
+					previous_item = list.items[i];
 					break;
 				}
 			}
@@ -109,7 +110,14 @@ static void rsv_trigger(struct rsv_filter *f)
 			idx = (size_t)rand() % list.count;
 	}
 
+	/* Show the newly picked item before hiding the previous one, so at
+	 * least one child stays visible throughout - hiding first and
+	 * showing second (as separate obs_sceneitem_set_visible calls) left
+	 * a window where the render thread could sample the scene with
+	 * neither visible, producing a black-frame flash. */
 	obs_sceneitem_set_visible(list.items[idx], true);
+	if (previous_item && previous_item != list.items[idx])
+		obs_sceneitem_set_visible(previous_item, false);
 	f->current_source = obs_source_get_weak_source(obs_sceneitem_get_source(list.items[idx]));
 
 	for (size_t i = 0; i < list.count; i++)

@@ -5,3 +5,4 @@ build_*/
 CMakeUserPresets.json
 *.dylib
 *.dSYM/
+logs/

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rejects pushing any tag that doesn't look like vX.Y.Z (e.g. v1.3.1), or
 # whose version doesn't match CMakeLists.txt's VERSION at the tagged
-# commit (the same field `make version x.y.z` rewrites).
+# commit (the same field `make release` rewrites).
 #
 # .github/workflows/release.yml only triggers on tags matching v* - an
 # un-prefixed tag (e.g. 1.3.1) would push successfully but silently do
@@ -37,7 +37,7 @@ while read -r local_ref local_sha remote_ref _remote_sha; do
 		fi
 		if [ "$cmake_version" != "$tag_version" ]; then
 			echo "error: tag '$tag' doesn't match CMakeLists.txt's VERSION $cmake_version at the tagged commit" >&2
-			echo "       run 'make version $tag_version', commit, then re-tag" >&2
+			echo "       run 'make release $tag_version' to bump, commit and re-tag" >&2
 			exit 1
 		fi
 		;;

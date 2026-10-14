@@ -82,8 +82,10 @@ There's no local Windows build path. Cross-compile the `.dll` with
 mingw-w64 and build the installer with NSIS, both from Linux or macOS.
 
 ```bash
-# Linux
-sudo apt install cmake gcc-mingw-w64-x86-64 nsis
+# Linux (makensis via Homebrew: apt's nsis is too old, see CLAUDE.md)
+sudo apt install cmake gcc-mingw-w64-x86-64
+brew install makensis
+
 # macOS
 brew install cmake mingw-w64 makensis
 
@@ -106,12 +108,22 @@ apt resolves the `obs-studio` dependency automatically; `dpkg -i` doesn't.
 
 ## Releases
 
-Run `make version x.y.z` - it bumps `CMakeLists.txt`, commits that one
-file, and tags the commit `vx.y.z` (refusing a dirty tree or an
-already-existing tag, so the tag and version can't drift). It doesn't
-push; review with `git show`, then `git push && git push --tags`. The
-`v`-prefixed tag triggers `.github/workflows/release.yml`, which builds
-all three platforms and attaches the installers to a new GitHub Release.
+Run `make release` - it shows the current version and last tag, prompts
+for the next version (Enter takes the suggested patch bump; `make release
+x.y.z` skips the prompt), bumps `CMakeLists.txt`, commits that one file,
+and tags the commit `vx.y.z`. It refuses a dirty tree or an existing tag,
+so the tag and version can't drift. It doesn't push; review with `git
+show`, then `git push && git push origin vx.y.z`.
+
+The `v`-prefixed tag triggers `.github/workflows/release.yml`, which
+builds all three platforms and attaches the installers to a new GitHub
+Release. It also triggers `.forgejo/workflows/release.yml` on the
+self-hosted Forgejo remote (`origin`), which does the same for Linux and
+Windows (no macOS runner there). That needs a `forgejo-runner` with an
+`ubuntu-24.04` label mapped to a GitHub-like image (e.g.
+`ubuntu-24.04:docker://ghcr.io/catthehacker/ubuntu:act-24.04`) and a
+`RELEASE_TOKEN` repo secret with `write:repository` scope - without a
+runner, its jobs just queue forever.
 
 Run `make hooks` once per clone to install a pre-push hook that rejects
 un-prefixed tags.

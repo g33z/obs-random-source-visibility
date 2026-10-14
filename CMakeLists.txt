@@ -4,6 +4,9 @@ project(obs-random-source-visibility VERSION 1.4.1 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+# maintenance.sh's static-analysis pass replays the exact compile commands
+# from here (and it's what clangd reads, too).
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(APPLE)
 	set(OBS_APP_BUNDLE "/Applications/OBS.app" CACHE PATH "Installed OBS.app to link libobs against")
@@ -81,6 +84,15 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES PREFIX "")
+
+if(UNIX AND NOT APPLE)
+	# Full RELRO + non-executable stack. Ubuntu's toolchain only defaults to
+	# partial RELRO; BIND_NOW also means a libobs too old for a symbol we use
+	# fails at load time with a clear error, not later mid-stream.
+	target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+		"LINKER:-z,relro" "LINKER:-z,now" "LINKER:-z,noexecstack"
+	)
+endif()
 
 if(APPLE)
 	set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES

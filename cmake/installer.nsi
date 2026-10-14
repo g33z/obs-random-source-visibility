@@ -1,6 +1,7 @@
 ; NSIS installer script for obs-random-source-visibility.
 ;
-; Built with makensis (Linux: apt install nsis; macOS: brew install makensis) -
+; Built with makensis >= 3.12 (brew install makensis, macOS or Linux - apt's
+; nsis is too old, see CLAUDE.md) -
 ; makensis itself cross-builds the Windows installer .exe from Linux/macOS,
 ; same as the plugin .dll is cross-compiled; nothing runs on actual Windows
 ; until the resulting installer is executed there.

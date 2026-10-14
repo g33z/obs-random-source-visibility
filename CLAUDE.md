@@ -50,24 +50,63 @@ sudo apt install cmake libobs-dev
 ```
 
 `cmake` alone is not sufficient — without `libobs-dev`, `find_package(libobs)`
-in CMakeLists.txt fails at configure time.
+in CMakeLists.txt fails at configure time. If `obs-studio` comes from
+obsproject's PPA instead (it ships its own libobs CMake config), that
+config also requires SIMDe headers: `sudo apt install libsimde-dev`.
 
 Windows is cross-compiled from Linux or macOS via mingw-w64 — nothing is
 built on actual Windows, and there's no local build path on Windows
 itself. Driven by the same Makefile, via `-windows`-suffixed targets:
 
 ```bash
-sudo apt install cmake gcc-mingw-w64-x86-64 nsis   # Linux; macOS: brew install mingw-w64 makensis
+sudo apt install cmake gcc-mingw-w64-x86-64        # Linux; macOS: brew install mingw-w64 makensis
+brew install makensis                              # Linux too (linuxbrew) - not apt's nsis, see below
 
 make deps-windows      # fetch libobs headers + synthesize obs.lib into .deps/windows/
 make build-windows     # cross-compile obs-random-source-visibility.dll
 make package-windows   # build a Windows installer .exe into build/dist/ via makensis
 ```
 
+makensis has to be NSIS >= 3.12: the installer stub it embeds in our
+`.exe` is where NSIS CVEs live (CVE-2025-43715, fixed 3.11;
+CVE-2026-42171, fixed 3.12), and Ubuntu's `nsis` package is behind (3.09
+on 24.04, 3.10 on 26.04). Locally, Homebrew's `makensis` is current on both macOS
+and Linux. CI (GitHub and Forgejo, which has no Homebrew) runs
+`bin/install-nsis.sh` instead. It installs a pinned, sha256-verified NSIS the
+same way Homebrew's formula does: it compiles only the native `makensis` with
+scons, and takes the prebuilt Stubs/Plugins/Include from NSIS's official
+release `.zip`. `make outdated` warns when a newer NSIS than the pin is out.
+`make audit` FAILs on a vulnerable pin or local makensis.
+
 There's no `install-windows` — copy the installer `.exe` onto an actual
 Windows machine and run it. See Packaging and releases below for how
 `deps-windows.sh` synthesizes `obs.lib`, how `cmake/installer.nsi` builds
 the installer, and why a native Windows build was ruled out for both.
+
+## Monthly maintenance
+
+`make maintenance` (`bin/maintenance.sh all`) is the monthly upkeep pass, and
+the `monthly-maintenance` skill (`.claude/skills/monthly-maintenance/`) is
+the full routine around it (what to bump, how to triage, how to record
+it). The script only reports, it never changes anything. It rebuilds every platform
+this host can build, then:
+
+- `make outdated` — local OBS and `.deps/windows` vs. the latest OBS
+  release, CI action refs (GitHub actions against GitHub, `.forgejo` ones
+  against the `data.forgejo.org` mirror Forgejo actually resolves them
+  from), and pending apt/brew upgrades for build tools.
+- `make audit` — NVD CVEs for OBS, NSIS, mingw-w64 and SIMDe (CPE range match
+  plus a "before X"/"up to X" parse of the description, plus anything
+  new in the last `MAINT_CVE_DAYS`). NSIS hits FAIL, since makensis builds the
+  installer we ship. Also: GitHub advisories for obs-studio and every action used,
+  gcc `-fanalyzer`/clang `--analyze` replayed from each build dir's
+  `compile_commands.json` (so the windows build dir also checks for
+  deprecated API against the *latest* OBS headers), cppcheck/shellcheck/
+  actionlint when installed, and hardening/import/export checks on the
+  built `.so`/`.dll`/`.plugin`.
+
+Output (`maintenance-report.txt` plus build logs) goes to the gitignored
+`logs/` rather than `build/`, because `make rebuild` wipes `build/` mid-run.
 
 ## Packaging and releases
 
@@ -110,7 +149,7 @@ Make's.
 and publishes the `.dmg`/`.deb`/`.exe` to a GitHub Release whenever a tag
 matching `v*` is pushed (the `windows` job runs on the same
 `ubuntu-24.04` runner as `linux`, just with `gcc-mingw-w64-x86-64` and
-`nsis` installed too) — it does nothing on regular commits/pushes, so it
+`bin/install-nsis.sh`'s makensis installed too) — it does nothing on regular commits/pushes, so it
 costs nothing just by existing.
 
 Windows was previously left out entirely (no local build path, dropped
@@ -204,7 +243,27 @@ into the Makefile/CI.
   the export-name table — exiting early would close the pipe while
   `objdump` is still writing the rest of its dump, killing it with
   `SIGPIPE` and failing the whole script under `pipefail`. Drains to EOF
-  instead.
+  instead. `obs.dll` lives in an unversioned `.deps/windows/obs-root/`
+  (CMakeLists.txt points at it directly), so a `.obs-version` stamp there
+  makes a new OBS release re-download it. Without the stamp, a new release
+  would update the headers but keep linking the old dll.
+- `bin/install-nsis.sh` — installs the pinned NSIS used by both CI workflows'
+  windows jobs (see Windows above for why not apt/Homebrew). Bumping it
+  means updating `NSIS_VERSION` plus both sha256s. Cross-check the hashes
+  against Homebrew's `makensis` formula.
+- `.forgejo/workflows/release.yml` — Forgejo mirror of the GitHub release
+  workflow (linux + windows, no macOS). `runs-on: ubuntu-24.04` needs a
+  runner label mapped to a GitHub-like image with sudo, apt and Node 24
+  (`ghcr.io/catthehacker/ubuntu:act-24.04`). Artifacts go through Forgejo's
+  patched `forgejo/upload-artifact`/`download-artifact` forks (full
+  `https://data.forgejo.org/...` URLs), because GitHub's own
+  `actions/*-artifact@v4+` don't work against Forgejo.
+- `bin/release.sh` — behind `make release`: shows the current version and
+  last tag, prompts for the next version (or takes `make release x.y.z`),
+  bumps `CMakeLists.txt`'s `project(... VERSION)`, commits that one file and
+  tags `vx.y.z`. Refuses on a dirty tree or an existing tag; never pushes.
+- `bin/maintenance.sh` — the monthly maintenance/security pass (see Monthly
+  maintenance above). Exits non-zero if any check FAILs.
 - `cmake/installer.nsi` — NSIS script `make package-windows` feeds to
   `makensis` to build the Windows installer `.exe`. Reads directly from
   `stage-windows`'s output (`obs-plugins/64bit/<name>.dll` and

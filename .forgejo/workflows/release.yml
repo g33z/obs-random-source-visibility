@@ -1,0 +1,96 @@
+name: Release
+
+# Mirrors .github/workflows/release.yml for the self-hosted Forgejo remote
+# (origin, git.nrdblg.de). No macOS job here: a self-hosted runner needs a
+# macOS-labeled runner registered to build that job, which this instance
+# doesn't have - add one back (copy the macos job from the GitHub workflow)
+# if a Mac runner is ever registered here.
+#
+# `runs-on: ubuntu-24.04` needs a runner label mapped to a GitHub-like
+# image (sudo, apt, Node 24 for actions/checkout@v7), e.g. in the runner's
+# config.yml:
+#   labels:
+#     - "ubuntu-24.04:docker://ghcr.io/catthehacker/ubuntu:act-24.04"
+#     - "ubuntu-latest:docker://ghcr.io/catthehacker/ubuntu:act-24.04"
+#
+# Artifacts use Forgejo's patched forks (forgejo/upload-artifact,
+# forgejo/download-artifact): GitHub's actions/*-artifact@v4+ talk to
+# GitHub's artifact backend, which Forgejo doesn't implement. Each fork tag
+# is upstream's release plus one "disable GHES check" patch. Forgejo's docs
+# and end-to-end tests use v4, so fall back to @v4 for both if a newer tag
+# misbehaves.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libobs-dev
+
+      - name: Build and package
+        run: make package
+
+      - uses: https://data.forgejo.org/forgejo/upload-artifact@v5
+        with:
+          name: linux
+          path: build/dist/*.deb
+
+  windows:
+    # Cross-compiled from Linux via mingw-w64, and the installer itself is
+    # built from Linux via makensis - see deps-windows.sh,
+    # cmake/mingw-w64-toolchain.cmake and cmake/installer.nsi. Nothing is
+    # built on actual Windows.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      # NSIS comes from bin/install-nsis.sh (pinned + checksum-verified),
+      # not apt: NSIS CVEs live in the installer stub that ends up in our
+      # .exe, and Ubuntu's nsis (3.09 on 24.04, 3.10 even on 26.04) is
+      # affected by CVE-2025-43715 (fixed 3.11) and CVE-2026-42171 (fixed
+      # 3.12).
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc-mingw-w64-x86-64 scons g++ zlib1g-dev unzip
+
+      - name: Install NSIS
+        run: |
+          bin/install-nsis.sh "${RUNNER_TEMP:-/tmp}/nsis"
+          echo "${RUNNER_TEMP:-/tmp}/nsis/bin" >> "$GITHUB_PATH"
+
+      - name: Build and package
+        run: make package-windows
+
+      - uses: https://data.forgejo.org/forgejo/upload-artifact@v5
+        with:
+          name: windows
+          path: build/dist/*.exe
+
+  release:
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: https://data.forgejo.org/forgejo/download-artifact@v7
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Forgejo release
+        uses: actions/forgejo-release@v2.13.4
+        with:
+          direction: upload
+          url: ${{ env.FORGEJO_SERVER_URL }}
+          repo: ${{ github.repository }}
+          tag: ${{ github.ref_name }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+          release-dir: artifacts

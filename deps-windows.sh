@@ -45,7 +45,11 @@ ln -sfn "obs-studio-$OBS_TAG/libobs" "$DEPS_DIR/libobs-headers"
 
 OBS_ROOT="$DEPS_DIR/obs-root"
 OBS_DLL="$OBS_ROOT/bin/64bit/obs.dll"
-if [ ! -f "$OBS_DLL" ]; then
+# obs-root isn't versioned by path (CMakeLists.txt points at it directly),
+# so a stamp file tracks which release obs.dll came from - otherwise a new
+# OBS release would refresh the headers above but keep linking the old dll.
+OBS_STAMP="$OBS_ROOT/.obs-version"
+if [ ! -f "$OBS_DLL" ] || [ "$(cat "$OBS_STAMP" 2>/dev/null)" != "$OBS_TAG" ]; then
 	ZIP_URL="https://github.com/obsproject/obs-studio/releases/download/$OBS_TAG/OBS-Studio-$OBS_TAG-Windows-x64.zip"
 	TMP_ZIP=$(mktemp)
 	trap 'rm -f "$TMP_ZIP"' EXIT
@@ -53,6 +57,7 @@ if [ ! -f "$OBS_DLL" ]; then
 	rm -rf "$OBS_ROOT"
 	mkdir -p "$OBS_ROOT"
 	unzip -q "$TMP_ZIP" "bin/64bit/obs.dll" -d "$OBS_ROOT"
+	echo "$OBS_TAG" >"$OBS_STAMP"
 fi
 
 # obs.dll's C API symbols are undecorated on x64 (no name-mangling), so the

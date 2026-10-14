@@ -7,14 +7,14 @@ on:
 
 jobs:
   # Fails fast, before any platform build, if the pushed tag doesn't match
-  # CMakeLists.txt's VERSION (the field `make version x.y.z` rewrites and
+  # CMakeLists.txt's VERSION (the field `make release` rewrites and
   # PLUGIN_VERSION is scraped from for artifact filenames). The pre-push
   # hook in .githooks/ catches this locally, but it's opt-in
   # (`make hooks`) - this is the non-optional backstop.
   check-version:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify tag matches CMakeLists.txt VERSION
         run: |
@@ -27,9 +27,9 @@ jobs:
 
   macos:
     needs: check-version
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: brew install cmake simde
@@ -40,7 +40,7 @@ jobs:
       - name: Build and package
         run: make package
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: build/dist/*.dmg
@@ -49,7 +49,7 @@ jobs:
     needs: check-version
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: |
@@ -59,7 +59,7 @@ jobs:
       - name: Build and package
         run: make package
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: build/dist/*.deb
@@ -72,17 +72,27 @@ jobs:
     needs: check-version
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
+      # NSIS comes from bin/install-nsis.sh (pinned + checksum-verified),
+      # not apt: NSIS CVEs live in the installer stub that ends up in our
+      # .exe, and Ubuntu's nsis (3.09 on 24.04, 3.10 even on 26.04) is
+      # affected by CVE-2025-43715 (fixed 3.11) and CVE-2026-42171 (fixed
+      # 3.12).
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake gcc-mingw-w64-x86-64 nsis
+          sudo apt-get install -y cmake gcc-mingw-w64-x86-64 scons g++ zlib1g-dev unzip
+
+      - name: Install NSIS
+        run: |
+          bin/install-nsis.sh "${RUNNER_TEMP:-/tmp}/nsis"
+          echo "${RUNNER_TEMP:-/tmp}/nsis/bin" >> "$GITHUB_PATH"
 
       - name: Build and package
         run: make package-windows
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: build/dist/*.exe
@@ -93,12 +103,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*/*
           generate_release_notes: true

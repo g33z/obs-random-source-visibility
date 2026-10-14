@@ -25,29 +25,21 @@ OBS_APP_BUNDLE ?= /Applications/OBS.app
 OBS_VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$(OBS_APP_BUNDLE)/Contents/Info.plist" 2>/dev/null)
 OBS_SRC_DIR := $(DEPS_DIR)/obs-studio-$(OBS_VERSION)
 CMAKE_ARGS += -DOBS_APP_BUNDLE=$(OBS_APP_BUNDLE)
-SED_INPLACE := sed -i ''
 else ifeq ($(UNAME_S),Linux)
 OBS_PLUGIN_DIR := $(HOME)/.config/obs-studio/plugins
-SED_INPLACE := sed -i
 endif
 
-.PHONY: deps configure build stage install package clean rebuild version bump-version hooks \
-	deps-windows configure-windows build-windows stage-windows package-windows clean-windows
+.PHONY: deps configure build stage install package clean rebuild release hooks \
+	deps-windows configure-windows build-windows stage-windows package-windows clean-windows \
+	maintenance outdated audit
 
-# Lets `make version x.y.z` pass "x.y.z" as an argument instead of a goal.
-# Chaining other goals (e.g. `make version x.y.z package`) isn't supported -
-# PLUGIN_VERSION above is computed once at Makefile-parse time, so a goal
-# after `version` in the same invocation would still see the pre-bump value.
-ifeq (version,$(firstword $(MAKECMDGOALS)))
-ifneq ($(words $(MAKECMDGOALS)),2)
-$(error Usage: make version x.y.z (exactly one argument, run on its own))
-endif
-VERSION_ARG := $(word 2,$(MAKECMDGOALS))
-# Only stub out a no-op target for VERSION_ARG if it actually looks like a
-# version - otherwise a typo'd argument (e.g. `make version clean`) would
-# silently shadow a real target's recipe instead of failing loudly below.
-ifeq ($(shell echo '$(VERSION_ARG)' | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$' && echo yes),yes)
-$(eval $(VERSION_ARG):;@:)
+# Lets `make release x.y.z` pass "x.y.z" through to bin/release.sh instead of
+# Make trying to build it as a goal. Only matched when it looks like a
+# version, so a typo'd argument still fails loudly rather than becoming a no-op.
+ifeq (release,$(firstword $(MAKECMDGOALS)))
+RELEASE_ARG := $(word 2,$(MAKECMDGOALS))
+ifeq ($(shell echo '$(RELEASE_ARG)' | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$$' && echo yes),yes)
+$(eval $(RELEASE_ARG):;@:)
 endif
 endif
 
@@ -160,7 +152,7 @@ stage-windows: build-windows
 package-windows: stage-windows
 	@mkdir -p $(DIST_DIR)
 	@command -v makensis >/dev/null || { \
-		echo "makensis not found - install it with: sudo apt install nsis (Linux) or brew install makensis (macOS)"; \
+		echo "makensis not found - install it with: brew install makensis (macOS/Linux; apt's nsis is too old, see CLAUDE.md)"; \
 		exit 1; \
 	}
 	rm -f "$(DIST_DIR)/$(PLUGIN_NAME)-$(PLUGIN_VERSION)-windows-installer.exe"
@@ -174,48 +166,25 @@ package-windows: stage-windows
 clean-windows:
 	rm -rf $(WIN_BUILD_DIR)
 
-# Sets the project version in CMakeLists.txt (the single source of truth
-# PLUGIN_VERSION above is scraped from), then commits that one file and
-# tags the commit - bump and tag used to be two manual, unenforced steps,
-# which let them drift (CMakeLists.txt reading an old version at an
-# already-pushed vX.Y.Z tag). Usage: make version x.y.z. Doesn't push -
-# review with `git show` and run `git push && git push --tags` yourself.
-version:
-ifndef VERSION_ARG
-	$(error Usage: make version x.y.z)
-endif
-	@[ -n "$(SED_INPLACE)" ] || \
-		{ echo "make version is only supported on macOS/Linux (unsupported platform: $(UNAME_S))"; exit 1; }
-	@echo '$(VERSION_ARG)' | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$' || \
-		{ echo "version must be x.y.z (got '$(VERSION_ARG)')"; exit 1; }
-	@git rev-parse -q --verify "refs/tags/v$(VERSION_ARG)" >/dev/null && \
-		{ echo "tag v$(VERSION_ARG) already exists - pick a version that hasn't been tagged yet"; exit 1; } || true
-	@git diff --quiet && git diff --cached --quiet || \
-		{ echo "working tree has uncommitted changes - commit or stash them first so the version bump is its own commit"; exit 1; }
-	$(SED_INPLACE) -E 's/^(project[^V]*VERSION )[0-9.]+(.*)/\1$(VERSION_ARG)\2/' CMakeLists.txt
-	git commit -m "Bump version to $(VERSION_ARG)" -- CMakeLists.txt
-	git tag "v$(VERSION_ARG)"
-	@echo "Bumped to $(VERSION_ARG), committed, and tagged v$(VERSION_ARG)."
-	@echo "Push when ready: git push && git push --tags"
+# Cuts a release: shows the current version, prompts for the next one (or
+# takes it as `make release x.y.z`), bumps CMakeLists.txt, commits, and tags.
+# Doesn't push. See bin/release.sh.
+release:
+	@bin/release.sh $(RELEASE_ARG)
 
-# Interactively bumps the current x.y.z (PLUGIN_VERSION, read from
-# CMakeLists.txt) by one patch/minor/major level, then hands off to the
-# `version` target above to do the actual write + validation.
-bump-version:
-	@current="$(PLUGIN_VERSION)"; \
-	major=$$(echo "$$current" | cut -d. -f1); \
-	minor=$$(echo "$$current" | cut -d. -f2); \
-	patch=$$(echo "$$current" | cut -d. -f3); \
-	echo "Current version: $$current"; \
-	printf "Bump [patch/minor/major]: "; \
-	read level; \
-	case "$$level" in \
-		patch) patch=$$((patch + 1));; \
-		minor) minor=$$((minor + 1)); patch=0;; \
-		major) major=$$((major + 1)); minor=0; patch=0;; \
-		*) echo "invalid choice '$$level' - expected patch, minor, or major"; exit 1;; \
-	esac; \
-	$(MAKE) version "$$major.$$minor.$$patch"
+# Monthly maintenance pass - see bin/maintenance.sh and
+# .claude/skills/monthly-maintenance. Report-only: it never bumps anything
+# itself. `maintenance` rebuilds every platform this host can build first,
+# then runs both `outdated` (version checks) and `audit` (CVEs, static
+# analysis, artifact hardening). Fails if any check FAILs.
+maintenance:
+	bin/maintenance.sh all
+
+outdated:
+	bin/maintenance.sh outdated
+
+audit:
+	bin/maintenance.sh audit
 
 # Points git at the repo's versioned hooks (.githooks/) instead of the
 # untracked, unshared .git/hooks/ - run once per clone.
